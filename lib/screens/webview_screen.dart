@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../core/config.dart';
 import '../core/connectivity/connection_monitor.dart';
@@ -29,6 +30,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
       // Bei Wiederverbindung: WebView neu laden
       if (isOnline && _webViewController != null) {
         _webViewController!.reload();
+        SemanticsService.announce(
+          'Verbindung wiederhergestellt. Seite wird neu geladen.',
+          TextDirection.ltr,
+        );
+      }
+      if (!isOnline) {
+        SemanticsService.announce(
+          'Verbindung verloren.',
+          TextDirection.ltr,
+        );
       }
     });
   }
@@ -37,18 +48,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void dispose() {
     _connectionMonitor.dispose();
     super.dispose();
-  }
-
-  /// Back-Button: Erst im WebView zurueck, dann App schliessen
-  Future<bool> _onWillPop() async {
-    if (_webViewController != null) {
-      final canGoBack = await _webViewController!.canGoBack();
-      if (canGoBack) {
-        _webViewController!.goBack();
-        return false; // App NICHT schliessen
-      }
-    }
-    return true; // App schliessen (keine WebView-History mehr)
   }
 
   @override
@@ -65,54 +64,87 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
     }
 
-    // ignore: deprecated_member_use
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    // PopScope ersetzt das veraltete WillPopScope
+    // Back-Button: Erst im WebView zurueck, dann App schliessen
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_webViewController != null) {
+          final canGoBack = await _webViewController!.canGoBack();
+          if (canGoBack) {
+            _webViewController!.goBack();
+            return;
+          }
+        }
+        // Keine WebView-History mehr → App schliessen erlauben
+        if (context.mounted) {
+          Navigator.of(context).maybePop();
+        }
+      },
       child: Scaffold(
         body: SafeArea(
           child: Stack(
             children: [
-              InAppWebView(
-                initialUrlRequest: URLRequest(
-                  url: WebUri(AppConfig.gatewayUrl),
+              // WebView — Screenreader-Inhalte kommen aus der Web-Seite selbst
+              Semantics(
+                label: 'Klara Plattform',
+                hint: 'Webansicht der Klara-Plattform',
+                child: InAppWebView(
+                  initialUrlRequest: URLRequest(
+                    url: WebUri(AppConfig.gatewayUrl),
+                  ),
+                  initialSettings: InAppWebViewSettings(
+                    javaScriptEnabled: true,
+                    // Cookies persistent speichern (Session bleibt bei Neustart)
+                    thirdPartyCookiesEnabled: true,
+                    // Kamera-Zugriff erlauben (fuer Vision-Modul)
+                    mediaPlaybackRequiresUserGesture: false,
+                    allowsInlineMediaPlayback: true,
+                    supportZoom: false,
+                    // User-Agent: App identifizierbar machen
+                    userAgent: AppConfig.userAgent,
+                  ),
+                  onWebViewCreated: (controller) {
+                    _webViewController = controller;
+                  },
+                  onLoadStart: (controller, url) {
+                    setState(() => _isLoading = true);
+                  },
+                  onLoadStop: (controller, url) {
+                    setState(() => _isLoading = false);
+                    SemanticsService.announce(
+                      'Seite geladen',
+                      TextDirection.ltr,
+                    );
+                  },
+                  onReceivedError: (controller, request, error) {
+                    SemanticsService.announce(
+                      'Fehler beim Laden der Seite',
+                      TextDirection.ltr,
+                    );
+                  },
+                  // Kamera/Mikrofon Berechtigung automatisch erteilen
+                  onPermissionRequest: (controller, request) async {
+                    return PermissionResponse(
+                      resources: request.resources,
+                      action: PermissionResponseAction.GRANT,
+                    );
+                  },
                 ),
-                initialSettings: InAppWebViewSettings(
-                  javaScriptEnabled: true,
-                  // Cookies persistent speichern (Session bleibt bei App-Neustart)
-                  thirdPartyCookiesEnabled: true,
-                  // Kamera-Zugriff erlauben (fuer Vision-Modul)
-                  mediaPlaybackRequiresUserGesture: false,
-                  allowsInlineMediaPlayback: true,
-                  supportZoom: false,
-                  // User-Agent: App identifizierbar machen
-                  userAgent: AppConfig.userAgent,
-                ),
-                onWebViewCreated: (controller) {
-                  _webViewController = controller;
-                },
-                onLoadStart: (controller, url) {
-                  setState(() => _isLoading = true);
-                },
-                onLoadStop: (controller, url) {
-                  setState(() => _isLoading = false);
-                },
-                // Kamera/Mikrofon Berechtigung automatisch erteilen
-                onPermissionRequest: (controller, request) async {
-                  return PermissionResponse(
-                    resources: request.resources,
-                    action: PermissionResponseAction.GRANT,
-                  );
-                },
               ),
               // Ladebalken oben im WebView
               if (_isLoading)
-                const Positioned(
+                Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: LinearProgressIndicator(
-                    color: KlaraColors.primary,
-                    backgroundColor: Colors.transparent,
+                  child: Semantics(
+                    label: 'Seite wird geladen',
+                    child: const LinearProgressIndicator(
+                      color: KlaraColors.primary,
+                      backgroundColor: Colors.transparent,
+                    ),
                   ),
                 ),
             ],
