@@ -130,8 +130,8 @@ flutter build apk --release  # Android APK bauen
 - **Phase 1:** App-Grundgeruest (WebView, Splash, Offline, Versions-Check) ✅
 - **Phase 2:** Push via ntfy.sh (WebSocket, Benachrichtigungen) ✅
 - **Phase 3:** NFC-Einstempeln + Cookie-Bridge + JavaScript-Bridge ✅
-- **Phase 4:** Biometrie-Entsperrung (optional)
-- **Phase 5:** Polishing + Release
+- **Phase 4:** Biometrie-Entsperrung ✅
+- **Phase 5:** Polishing + Release ✅
 
 ## Vollstaendiger Plan
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../core/auth/biometric_lock.dart';
 import '../core/config.dart';
@@ -10,7 +11,8 @@ import 'nfc_screen.dart';
 import 'offline_screen.dart';
 
 /// Haupt-Screen: Zeigt die Klara-Plattform im WebView.
-/// Integriert: JS-Bridge, Push-Empfang via ntfy, NFC-Button.
+/// Integriert: JS-Bridge, Push-Empfang via ntfy, NFC-Button,
+/// Pull-to-Refresh, Datei-Upload, Fehlerseiten, Doppeltipp-Schliessen.
 class WebViewScreen extends StatefulWidget {
   const WebViewScreen({super.key});
 
@@ -25,14 +27,30 @@ class _WebViewScreenState extends State<WebViewScreen> {
   late final NtfyService _ntfyService;
   bool _isOffline = false;
   bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
 
   // Login-Daten aus der JS-Bridge
   String? _username;
   String? _clientUsername;
 
+  // Doppeltipp zum Schliessen (Android Back-Button)
+  DateTime? _lastBackPress;
+
+  // Pull-to-Refresh Controller
+  PullToRefreshController? _pullToRefreshController;
+
   @override
   void initState() {
     super.initState();
+
+    // Pull-to-Refresh einrichten
+    _pullToRefreshController = PullToRefreshController(
+      settings: PullToRefreshSettings(color: KlaraColors.primary),
+      onRefresh: () async {
+        _webViewController?.reload();
+      },
+    );
 
     // Push-Service initialisieren
     _ntfyService = NtfyService(
@@ -72,7 +90,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
   /// geoeffnet wird (Deep Link).
   void _handleNotificationTap(String? payload) {
     if (payload != null && _webViewController != null) {
-      // Deep Link: URL im WebView oeffnen
       final url = payload.startsWith('http')
           ? payload
           : '${AppConfig.baseUrl}$payload';
@@ -97,9 +114,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
   /// Registriert die JS-Handler die der WebView aufrufen kann
   void _registerJsHandlers(InAppWebViewController controller) {
     // Handler: Login-Daten vom WebView empfangen
-    // Die Web-Seite ruft auf:
-    //   window.flutter_inappwebview.callHandler('onUserLogin',
-    //     {username: "steffen.gohl", clientUsername: "steffen.gohl"})
     controller.addJavaScriptHandler(
       handlerName: 'onUserLogin',
       callback: (args) {
@@ -155,11 +169,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
     }
 
-    // PopScope: Back-Button erst im WebView zurueck, dann App schliessen
+    // PopScope: Back-Button erst im WebView zurueck, dann Doppeltipp zum Schliessen
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+
+        // Erst im WebView zurueck navigieren
         if (_webViewController != null) {
           final canGoBack = await _webViewController!.canGoBack();
           if (canGoBack) {
@@ -167,65 +183,116 @@ class _WebViewScreenState extends State<WebViewScreen> {
             return;
           }
         }
-        if (context.mounted) {
-          Navigator.of(context).maybePop();
+
+        // Keine WebView-History mehr → Doppeltipp zum Schliessen
+        final now = DateTime.now();
+        if (_lastBackPress != null &&
+            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          // Zweiter Tipp innerhalb 2 Sekunden → App schliessen
+          SystemNavigator.pop();
+        } else {
+          _lastBackPress = now;
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Nochmal druecken zum Schliessen'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
         }
       },
       child: Scaffold(
         body: SafeArea(
           child: Stack(
             children: [
-              // WebView — Screenreader-Inhalte kommen aus der Web-Seite
-              Semantics(
-                label: 'Klara Plattform',
-                hint: 'Webansicht der Klara-Plattform',
-                child: InAppWebView(
-                  initialUrlRequest: URLRequest(
-                    url: WebUri(AppConfig.gatewayUrl),
+              // Fehlerseite anzeigen (404, 500, etc.)
+              if (_hasError)
+                _buildErrorScreen()
+              else
+                // WebView — Screenreader-Inhalte kommen aus der Web-Seite
+                Semantics(
+                  label: 'Klara Plattform',
+                  hint: 'Webansicht der Klara-Plattform',
+                  child: InAppWebView(
+                    initialUrlRequest: URLRequest(
+                      url: WebUri(AppConfig.gatewayUrl),
+                    ),
+                    pullToRefreshController: _pullToRefreshController,
+                    initialSettings: InAppWebViewSettings(
+                      javaScriptEnabled: true,
+                      // Cookies persistent (Session bleibt bei Neustart)
+                      thirdPartyCookiesEnabled: true,
+                      // Kamera/Mikrofon erlauben (Vision + Voice)
+                      mediaPlaybackRequiresUserGesture: false,
+                      allowsInlineMediaPlayback: true,
+                      // Datei-Upload erlauben (Fotos, Dokumente)
+                      allowFileAccessFromFileURLs: true,
+                      allowUniversalAccessFromFileURLs: true,
+                      supportZoom: false,
+                      // User-Agent: App identifizierbar machen
+                      userAgent: AppConfig.userAgent,
+                    ),
+                    onWebViewCreated: (controller) {
+                      _webViewController = controller;
+                      // JS-Handler registrieren BEVOR die Seite laedt
+                      _registerJsHandlers(controller);
+                    },
+                    onLoadStart: (controller, url) {
+                      setState(() {
+                        _isLoading = true;
+                        _hasError = false;
+                      });
+                    },
+                    onLoadStop: (controller, url) {
+                      setState(() => _isLoading = false);
+                      _pullToRefreshController?.endRefreshing();
+                      // JS-Bridge injizieren nachdem die Seite geladen ist
+                      _injectJsBridge();
+                      SemanticsService.announce(
+                        'Seite geladen',
+                        TextDirection.ltr,
+                      );
+                    },
+                    onReceivedHttpError: (controller, request, response) {
+                      // HTTP-Fehler abfangen (404, 500, etc.)
+                      final statusCode = response.statusCode ?? 0;
+                      if (statusCode >= 400) {
+                        setState(() {
+                          _hasError = true;
+                          _isLoading = false;
+                          _errorMessage = statusCode >= 500
+                              ? 'Server-Fehler ($statusCode). Bitte spaeter erneut versuchen.'
+                              : 'Seite nicht gefunden ($statusCode).';
+                        });
+                        SemanticsService.announce(
+                          _errorMessage,
+                          TextDirection.ltr,
+                        );
+                      }
+                    },
+                    onReceivedError: (controller, request, error) {
+                      _pullToRefreshController?.endRefreshing();
+                      setState(() {
+                        _hasError = true;
+                        _isLoading = false;
+                        _errorMessage =
+                            'Fehler beim Laden der Seite. Bitte erneut versuchen.';
+                      });
+                      SemanticsService.announce(
+                        _errorMessage,
+                        TextDirection.ltr,
+                      );
+                    },
+                    // Kamera/Mikrofon Berechtigung automatisch erteilen
+                    onPermissionRequest: (controller, request) async {
+                      return PermissionResponse(
+                        resources: request.resources,
+                        action: PermissionResponseAction.GRANT,
+                      );
+                    },
                   ),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    // Cookies persistent (Session bleibt bei Neustart)
-                    thirdPartyCookiesEnabled: true,
-                    // Kamera/Mikrofon erlauben (Vision + Voice)
-                    mediaPlaybackRequiresUserGesture: false,
-                    allowsInlineMediaPlayback: true,
-                    supportZoom: false,
-                    // User-Agent: App identifizierbar machen
-                    userAgent: AppConfig.userAgent,
-                  ),
-                  onWebViewCreated: (controller) {
-                    _webViewController = controller;
-                    // JS-Handler registrieren BEVOR die Seite laedt
-                    _registerJsHandlers(controller);
-                  },
-                  onLoadStart: (controller, url) {
-                    setState(() => _isLoading = true);
-                  },
-                  onLoadStop: (controller, url) {
-                    setState(() => _isLoading = false);
-                    // JS-Bridge injizieren nachdem die Seite geladen ist
-                    _injectJsBridge();
-                    SemanticsService.announce(
-                      'Seite geladen',
-                      TextDirection.ltr,
-                    );
-                  },
-                  onReceivedError: (controller, request, error) {
-                    SemanticsService.announce(
-                      'Fehler beim Laden der Seite',
-                      TextDirection.ltr,
-                    );
-                  },
-                  // Kamera/Mikrofon Berechtigung automatisch erteilen
-                  onPermissionRequest: (controller, request) async {
-                    return PermissionResponse(
-                      resources: request.resources,
-                      action: PermissionResponseAction.GRANT,
-                    );
-                  },
                 ),
-              ),
               // Ladebalken oben
               if (_isLoading)
                 Positioned(
@@ -246,6 +313,90 @@ class _WebViewScreenState extends State<WebViewScreen> {
         // NFC-Button unten rechts (schwebt ueber dem WebView)
         floatingActionButton: NfcFloatingButton(
           onPressed: _openNfcScreen,
+        ),
+      ),
+    );
+  }
+
+  /// Freundliche Fehlerseite statt nackter 404/500
+  Widget _buildErrorScreen() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Semantics(
+              label: 'Fehler',
+              child: const Icon(
+                Icons.error_outline,
+                size: 80,
+                color: KlaraColors.danger,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Semantics(
+              header: true,
+              child: const Text(
+                'Etwas ist schiefgelaufen',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: KlaraColors.textDark,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _errorMessage,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  setState(() => _hasError = false);
+                  _webViewController?.loadUrl(
+                    urlRequest: URLRequest(
+                      url: WebUri(AppConfig.gatewayUrl),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Erneut versuchen'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: KlaraColors.primary,
+                  foregroundColor: KlaraColors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 48,
+              child: TextButton(
+                onPressed: () {
+                  setState(() => _hasError = false);
+                  _webViewController?.loadUrl(
+                    urlRequest: URLRequest(
+                      url: WebUri(AppConfig.gatewayUrl),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Zurueck zur Startseite',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: KlaraColors.primary,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
