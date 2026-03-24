@@ -6,14 +6,14 @@ import 'package:klara_app/screens/update_screen.dart';
 
 void main() {
   group('Splash-Screen', () {
-    testWidgets('zeigt Perasi-Text und Ladebalken', (tester) async {
+    testWidgets('zeigt Logo und Ladebalken', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: SplashScreen()),
       );
 
-      expect(find.text('Perasi'), findsOneWidget);
       expect(find.text('Wird geladen...'), findsOneWidget);
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.byType(Image), findsOneWidget);
     });
 
     testWidgets('zeigt benutzerdefinierten Status-Text', (tester) async {

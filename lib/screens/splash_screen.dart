@@ -36,40 +36,12 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Platzhalter-Logo (wird spaeter durch echtes Perasi-Logo ersetzt)
-            // Dekorativ — fuer Screenreader ausblenden
+            // Perasi-Logo — dekorativ, fuer Screenreader ausblenden
             ExcludeSemantics(
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: KlaraColors.primary,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Center(
-                  child: Text(
-                    'P',
-                    style: TextStyle(
-                      color: KlaraColors.white,
-                      fontSize: 64,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            // App-Name — Screenreader liest "Perasi App"
-            Semantics(
-              header: true,
-              label: 'Perasi App',
-              child: const Text(
-                'Perasi',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: KlaraColors.textDark,
-                ),
+              child: Image.asset(
+                'assets/splash/perasi_logo.png',
+                width: 160,
+                height: 160,
               ),
             ),
             const SizedBox(height: 32),
@@ -88,7 +60,6 @@ class _SplashScreenState extends State<SplashScreen> {
             const SizedBox(height: 16),
             // Status-Text (z.B. "Wird geladen...")
             ExcludeSemantics(
-              // Wird schon oben im Semantics-Label des Ladebalkens vorgelesen
               child: Text(
                 widget.statusText,
                 style: const TextStyle(
