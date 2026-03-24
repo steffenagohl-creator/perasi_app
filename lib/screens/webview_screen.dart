@@ -3,9 +3,13 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../core/config.dart';
 import '../core/connectivity/connection_monitor.dart';
+import '../core/push/ntfy_service.dart';
+import '../widgets/nfc_floating_button.dart';
+import 'nfc_screen.dart';
 import 'offline_screen.dart';
 
-/// Haupt-Screen: Zeigt die Klara-Plattform im WebView
+/// Haupt-Screen: Zeigt die Klara-Plattform im WebView.
+/// Integriert: JS-Bridge, Push-Empfang via ntfy, NFC-Button.
 class WebViewScreen extends StatefulWidget {
   const WebViewScreen({super.key});
 
@@ -16,18 +20,28 @@ class WebViewScreen extends StatefulWidget {
 class _WebViewScreenState extends State<WebViewScreen> {
   InAppWebViewController? _webViewController;
   final ConnectionMonitor _connectionMonitor = ConnectionMonitor();
+  late final NtfyService _ntfyService;
   bool _isOffline = false;
   bool _isLoading = true;
+
+  // Login-Daten aus der JS-Bridge
+  String? _username;
+  String? _clientUsername;
 
   @override
   void initState() {
     super.initState();
-    _connectionMonitor.start();
 
-    // Auf Verbindungsaenderungen reagieren
+    // Push-Service initialisieren
+    _ntfyService = NtfyService(
+      onNotificationTap: _handleNotificationTap,
+    );
+    _ntfyService.init();
+
+    // Verbindungsueberwachung starten
+    _connectionMonitor.start();
     _connectionMonitor.onStatusChange.listen((isOnline) {
       setState(() => _isOffline = !isOnline);
-      // Bei Wiederverbindung: WebView neu laden
       if (isOnline && _webViewController != null) {
         _webViewController!.reload();
         SemanticsService.announce(
@@ -47,7 +61,79 @@ class _WebViewScreenState extends State<WebViewScreen> {
   @override
   void dispose() {
     _connectionMonitor.dispose();
+    _ntfyService.disconnect();
     super.dispose();
+  }
+
+  /// Wird aufgerufen wenn der User eine Push-Benachrichtigung antippt.
+  /// payload kann eine URL sein (z.B. "/time-tracking/") die im WebView
+  /// geoeffnet wird (Deep Link).
+  void _handleNotificationTap(String? payload) {
+    if (payload != null && _webViewController != null) {
+      // Deep Link: URL im WebView oeffnen
+      final url = payload.startsWith('http')
+          ? payload
+          : '${AppConfig.baseUrl}$payload';
+      _webViewController!.loadUrl(
+        urlRequest: URLRequest(url: WebUri(url)),
+      );
+    }
+  }
+
+  /// Injiziert das window.KlaraApp Objekt in den WebView
+  void _injectJsBridge() {
+    _webViewController?.evaluateJavascript(source: '''
+      window.KlaraApp = {
+        isNativeApp: true,
+        appVersion: "${AppConfig.appVersion}",
+        username: "",
+        clientUsername: "",
+      };
+    ''');
+  }
+
+  /// Registriert die JS-Handler die der WebView aufrufen kann
+  void _registerJsHandlers(InAppWebViewController controller) {
+    // Handler: Login-Daten vom WebView empfangen
+    // Die Web-Seite ruft auf:
+    //   window.flutter_inappwebview.callHandler('onUserLogin',
+    //     {username: "steffen.gohl", clientUsername: "steffen.gohl"})
+    controller.addJavaScriptHandler(
+      handlerName: 'onUserLogin',
+      callback: (args) {
+        if (args.isNotEmpty && args[0] is Map) {
+          final data = args[0] as Map;
+          setState(() {
+            _username = data['username'] as String?;
+            _clientUsername = data['clientUsername'] as String?;
+          });
+
+          // Push-Empfang starten sobald der Username bekannt ist
+          if (_username != null) {
+            _ntfyService.connect(_username!);
+          }
+        }
+      },
+    );
+
+    // Handler: Web-Seite kann NFC-Screen oeffnen
+    controller.addJavaScriptHandler(
+      handlerName: 'requestNfcScan',
+      callback: (args) {
+        _openNfcScreen();
+      },
+    );
+  }
+
+  /// Oeffnet den nativen NFC-Screen
+  void _openNfcScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NfcScreen(
+          clientUsername: _clientUsername ?? '',
+        ),
+      ),
+    );
   }
 
   @override
@@ -64,8 +150,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
     }
 
-    // PopScope ersetzt das veraltete WillPopScope
-    // Back-Button: Erst im WebView zurueck, dann App schliessen
+    // PopScope: Back-Button erst im WebView zurueck, dann App schliessen
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -77,7 +162,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
             return;
           }
         }
-        // Keine WebView-History mehr → App schliessen erlauben
         if (context.mounted) {
           Navigator.of(context).maybePop();
         }
@@ -86,7 +170,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         body: SafeArea(
           child: Stack(
             children: [
-              // WebView — Screenreader-Inhalte kommen aus der Web-Seite selbst
+              // WebView — Screenreader-Inhalte kommen aus der Web-Seite
               Semantics(
                 label: 'Klara Plattform',
                 hint: 'Webansicht der Klara-Plattform',
@@ -96,9 +180,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
                   ),
                   initialSettings: InAppWebViewSettings(
                     javaScriptEnabled: true,
-                    // Cookies persistent speichern (Session bleibt bei Neustart)
+                    // Cookies persistent (Session bleibt bei Neustart)
                     thirdPartyCookiesEnabled: true,
-                    // Kamera-Zugriff erlauben (fuer Vision-Modul)
+                    // Kamera/Mikrofon erlauben (Vision + Voice)
                     mediaPlaybackRequiresUserGesture: false,
                     allowsInlineMediaPlayback: true,
                     supportZoom: false,
@@ -107,12 +191,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
                   ),
                   onWebViewCreated: (controller) {
                     _webViewController = controller;
+                    // JS-Handler registrieren BEVOR die Seite laedt
+                    _registerJsHandlers(controller);
                   },
                   onLoadStart: (controller, url) {
                     setState(() => _isLoading = true);
                   },
                   onLoadStop: (controller, url) {
                     setState(() => _isLoading = false);
+                    // JS-Bridge injizieren nachdem die Seite geladen ist
+                    _injectJsBridge();
                     SemanticsService.announce(
                       'Seite geladen',
                       TextDirection.ltr,
@@ -133,7 +221,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                   },
                 ),
               ),
-              // Ladebalken oben im WebView
+              // Ladebalken oben
               if (_isLoading)
                 Positioned(
                   top: 0,
@@ -149,6 +237,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
                 ),
             ],
           ),
+        ),
+        // NFC-Button unten rechts (schwebt ueber dem WebView)
+        floatingActionButton: NfcFloatingButton(
+          onPressed: _openNfcScreen,
         ),
       ),
     );

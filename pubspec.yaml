@@ -46,6 +46,8 @@ dependencies:
 
   # HTTP-Client fuer native API-Calls
   http: ^1.3.0
+  flutter_local_notifications: ^19.5.0
+  nfc_manager: ^4.0.2
 
 dev_dependencies:
   flutter_test:

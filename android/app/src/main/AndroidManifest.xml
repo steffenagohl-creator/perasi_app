@@ -3,6 +3,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- NFC fuer Einstempeln per Handy -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+
+    <!-- Kamera fuer Vision-Modul im WebView -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Mikrofon fuer Klara Voice im WebView -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:label="Perasi"
         android:usesCleartextTraffic="false"

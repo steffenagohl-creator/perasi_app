@@ -11,8 +11,12 @@ class AppConfig {
   // Versions-Check Endpoint
   static const String versionCheckUrl = '$baseUrl/gateway/api/app-version/';
 
-  // ntfy Push-Server (wird in Phase 2 genutzt)
+  // ntfy Push-Server
   static const String ntfyBaseUrl = '$baseUrl/ntfy';
+
+  // NFC-Checkin Endpoint (Time-Tracking)
+  static const String nfcCheckinUrl =
+      '$baseUrl/time-tracking/api/rfid-checkin/';
 
   // App-Version (wird mit package_info_plus ausgelesen)
   static const String appVersion = '1.0.0';

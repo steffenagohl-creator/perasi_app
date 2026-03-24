@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Klara App</string>
+	<string>Perasi</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -45,5 +45,18 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- NFC fuer Einstempeln -->
+	<key>NFCReaderUsageDescription</key>
+	<string>Perasi nutzt NFC zum Einstempeln per Handy.</string>
+	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
+	<array>
+		<string>D276000085010100</string>
+	</array>
+	<!-- Kamera fuer Vision-Modul -->
+	<key>NSCameraUsageDescription</key>
+	<string>Perasi braucht die Kamera fuer das Vision-Modul.</string>
+	<!-- Mikrofon fuer Klara Voice -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Perasi braucht das Mikrofon fuer die Sprachsteuerung.</string>
 </dict>
 </plist>
