@@ -58,5 +58,8 @@
 	<!-- Mikrofon fuer Klara Voice -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Perasi braucht das Mikrofon fuer die Sprachsteuerung.</string>
+	<!-- FaceID fuer Biometrie-Entsperrung -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Perasi nutzt FaceID zum Entsperren der App.</string>
 </dict>
 </plist>

@@ -12,6 +12,9 @@
     <!-- Mikrofon fuer Klara Voice im WebView -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Biometrie (Fingerabdruck / Gesichtserkennung) -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <application
         android:label="Perasi"
         android:usesCleartextTraffic="false"

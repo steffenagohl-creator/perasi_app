@@ -1,5 +1,7 @@
 package services.klara.klara_app
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+// FlutterFragmentActivity statt FlutterActivity — wird von local_auth
+// fuer die Biometrie-Abfrage (Fingerabdruck/Gesicht) benoetigt
+class MainActivity : FlutterFragmentActivity()

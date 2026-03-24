@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../core/auth/biometric_lock.dart';
 import '../core/config.dart';
 import '../core/connectivity/connection_monitor.dart';
 import '../core/push/ntfy_service.dart';
@@ -20,6 +21,7 @@ class WebViewScreen extends StatefulWidget {
 class _WebViewScreenState extends State<WebViewScreen> {
   InAppWebViewController? _webViewController;
   final ConnectionMonitor _connectionMonitor = ConnectionMonitor();
+  final BiometricLock _biometricLock = BiometricLock();
   late final NtfyService _ntfyService;
   bool _isOffline = false;
   bool _isLoading = true;
@@ -107,6 +109,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
             _username = data['username'] as String?;
             _clientUsername = data['clientUsername'] as String?;
           });
+
+          // Merken dass User eingeloggt war (fuer Biometrie beim naechsten Start)
+          _biometricLock.markAsLoggedIn();
 
           // Push-Empfang starten sobald der Username bekannt ist
           if (_username != null) {
