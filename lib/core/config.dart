@@ -18,8 +18,12 @@ class AppConfig {
   static const String nfcCheckinUrl =
       '$baseUrl/time-tracking/api/rfid-checkin/';
 
+  // APK-Download-URL fuer In-App-Update
+  static const String apkDownloadUrl =
+      '$baseUrl/gateway/static/downloads/perasi.apk';
+
   // App-Version (wird mit package_info_plus ausgelesen)
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.1.0';
 
   // User-Agent fuer den WebView
   static const String userAgent = 'KlaraApp/$appVersion (Flutter)';

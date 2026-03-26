@@ -45,8 +45,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
     super.initState();
 
     // Pull-to-Refresh einrichten
+    // distanceToTriggerSync hoeher setzen damit es nicht versehentlich
+    // beim normalen Scrollen ausloest
     _pullToRefreshController = PullToRefreshController(
-      settings: PullToRefreshSettings(color: KlaraColors.primary),
+      settings: PullToRefreshSettings(
+        color: KlaraColors.primary,
+        distanceToTriggerSync: 150,
+      ),
       onRefresh: () async {
         _webViewController?.reload();
       },
@@ -232,6 +237,17 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       supportZoom: false,
                       // User-Agent: App identifizierbar machen
                       userAgent: AppConfig.userAgent,
+
+                      // --- Scroll-Performance optimieren ---
+                      // Texture-basiertes Rendering statt Hybrid Composition
+                      // (deutlich fluessigeres Scrollen auf Android)
+                      useHybridComposition: false,
+                      // Hardware-Beschleunigung an (schnelleres Rendering)
+                      hardwareAcceleration: true,
+                      // Overscroll-Effekt deaktivieren (weniger Touch-Konflikte)
+                      overScrollMode: OverScrollMode.NEVER,
+                      // Algorithmus fuer schnelleres Touch-Scrolling
+                      algorithmicDarkeningAllowed: false,
                     ),
                     onWebViewCreated: (controller) {
                       _webViewController = controller;
@@ -239,13 +255,19 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       _registerJsHandlers(controller);
                     },
                     onLoadStart: (controller, url) {
-                      setState(() {
-                        _isLoading = true;
-                        _hasError = false;
-                      });
+                      // Nur setState wenn sich der Zustand wirklich aendert
+                      // (vermeidet unnoetige Rebuilds waehrend des Scrollens)
+                      if (!_isLoading || _hasError) {
+                        setState(() {
+                          _isLoading = true;
+                          _hasError = false;
+                        });
+                      }
                     },
                     onLoadStop: (controller, url) {
-                      setState(() => _isLoading = false);
+                      if (_isLoading) {
+                        setState(() => _isLoading = false);
+                      }
                       _pullToRefreshController?.endRefreshing();
                       // JS-Bridge injizieren nachdem die Seite geladen ist
                       _injectJsBridge();

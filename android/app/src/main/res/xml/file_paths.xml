@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gibt dem FileProvider Zugriff auf den Cache-Ordner,
+     damit die heruntergeladene APK an den Installer uebergeben werden kann -->
+<paths>
+    <cache-path name="apk_cache" path="." />
+</paths>
