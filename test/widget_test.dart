@@ -54,13 +54,13 @@ void main() {
   });
 
   group('Update-Screen', () {
-    testWidgets('zeigt Update-Meldung und Store-Button', (tester) async {
+    testWidgets('zeigt Update-Meldung und Download-Button', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: UpdateScreen()),
       );
 
-      expect(find.text('Update erforderlich'), findsOneWidget);
-      expect(find.text('Zum Store'), findsOneWidget);
+      expect(find.text('Update verfuegbar'), findsOneWidget);
+      expect(find.text('Jetzt aktualisieren'), findsOneWidget);
       expect(find.byIcon(Icons.system_update), findsOneWidget);
     });
   });
