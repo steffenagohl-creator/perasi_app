@@ -277,7 +277,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       );
                     },
                     onReceivedHttpError: (controller, request, response) {
-                      // HTTP-Fehler abfangen (404, 500, etc.)
+                      // Nur Fehler der Hauptseite abfangen, nicht von
+                      // Sub-Ressourcen (Bilder, API-Calls, Fonts etc.)
+                      if (request.isForMainFrame != true) return;
                       final statusCode = response.statusCode ?? 0;
                       if (statusCode >= 400) {
                         setState(() {

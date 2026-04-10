@@ -23,7 +23,7 @@ class AppConfig {
       '$baseUrl/gateway/static/downloads/perasi.apk';
 
   // App-Version (wird mit package_info_plus ausgelesen)
-  static const String appVersion = '1.1.0';
+  static const String appVersion = '1.1.1';
 
   // User-Agent fuer den WebView
   static const String userAgent = 'KlaraApp/$appVersion (Flutter)';
