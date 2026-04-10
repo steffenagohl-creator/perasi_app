@@ -1,9 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Release-Schluessel aus key.properties laden
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties()
+keyProperties.load(keyPropertiesFile.inputStream())
 
 android {
     namespace = "services.klara.klara_app"
@@ -21,6 +28,15 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(keyProperties["storeFile"] as String)
+            storePassword = keyProperties["storePassword"] as String
+            keyAlias = keyProperties["keyAlias"] as String
+            keyPassword = keyProperties["keyPassword"] as String
+        }
+    }
+
     defaultConfig {
         applicationId = "services.klara.klara_app"
         minSdk = flutter.minSdkVersion
@@ -33,8 +49,8 @@ android {
 
     buildTypes {
         release {
-            // TODO: Eigene Signierung fuer den Play Store einrichten
-            signingConfig = signingConfigs.getByName("debug")
+            // Echter Release-Schluessel (nicht mehr Debug-Signatur)
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
