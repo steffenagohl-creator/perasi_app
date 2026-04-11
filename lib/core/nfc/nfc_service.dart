@@ -20,8 +20,16 @@ class NfcCheckinResult {
 class NfcService {
   final CookieBridge _cookieBridge = CookieBridge();
 
-  /// Prueft ob NFC auf diesem Geraet verfuegbar ist
+  /// Prueft ob NFC auf diesem Geraet verfuegbar ist.
+  ///
+  /// Auf Shared-Tablets (registrierten Gemeinschafts-Geraeten) wird NFC
+  /// bewusst ausgeschaltet — dort uebernimmt der Pi Zero das Scannen, das
+  /// Tablet ist nur Anzeige. Andernfalls koennte das Tablet versehentlich
+  /// selbst versuchen zu scannen.
   Future<bool> isAvailable() async {
+    if (await _cookieBridge.hasSharedTabletCookie()) {
+      return false;
+    }
     return await NfcManager.instance.isAvailable();
   }
 

@@ -28,4 +28,14 @@ class CookieBridge {
     final cookies = await getSessionCookies();
     return cookies[name];
   }
+
+  /// Prueft, ob dieses Tablet als Shared-Tablet registriert ist.
+  ///
+  /// Wenn der Cookie `klara_shared_tablet` existiert, laeuft die App im
+  /// Shared-Mode: Auto-Login per RFID-Einstempelung am Pi Zero, kein
+  /// eigenes NFC-Scanning am Tablet, keine biometrische Sperre.
+  Future<bool> hasSharedTabletCookie() async {
+    final token = await getCookie('klara_shared_tablet');
+    return token != null && token.isNotEmpty;
+  }
 }

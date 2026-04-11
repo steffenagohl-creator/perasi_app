@@ -3,6 +3,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../core/auth/biometric_lock.dart';
+import '../core/auth/cookie_bridge.dart';
 import '../core/config.dart';
 import '../core/connectivity/connection_monitor.dart';
 import '../core/push/ntfy_service.dart';
@@ -24,6 +25,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   InAppWebViewController? _webViewController;
   final ConnectionMonitor _connectionMonitor = ConnectionMonitor();
   final BiometricLock _biometricLock = BiometricLock();
+  final CookieBridge _cookieBridge = CookieBridge();
   late final NtfyService _ntfyService;
   bool _isOffline = false;
   bool _isLoading = true;
@@ -62,6 +64,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
       onNotificationTap: _handleNotificationTap,
     );
     _ntfyService.init();
+
+    // Shared-Tablet-Mode erkennen (nur fuer Diagnose, kein UI-Change):
+    // Wenn der Cookie klara_shared_tablet gesetzt ist, uebernimmt die
+    // SharedTabletMiddleware im Gateway den Auto-Login per RFID-Stempel.
+    // Die App muss dafuer nichts Weiteres tun — der Cookie wird vom
+    // WebView persistent gehalten und bei jedem Request mitgeschickt.
+    _cookieBridge.hasSharedTabletCookie().then((isShared) {
+      if (isShared) {
+        debugPrint('[SHARED-TABLET] Modus aktiv — NFC am Tablet deaktiviert, '
+            'Auto-Login laeuft ueber Pi Zero RFID-Stempel.');
+      }
+    });
 
     // Verbindungsueberwachung starten
     _connectionMonitor.start();
