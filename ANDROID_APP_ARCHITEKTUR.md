@@ -242,6 +242,27 @@ Die APK wird direkt vom Gateway-Static-Verzeichnis ausgeliefert:
 **WICHTIG:** Nach jedem APK-Deploy muss `docker restart gateway` folgen
 (WhiteNoise-Cache-Problem, dokumentiert in `BUILD.md`).
 
+### Versions-Endpoint (Gateway)
+
+`GET /api/app-version/` liefert:
+```json
+{"min_version": "1.2.0", "latest_version": "1.2.1"}
+```
+
+- App < `min_version` → **Update-Screen erzwungen** (User muss aktualisieren)
+- App < `latest_version` → Update empfohlen
+- Die Werte stehen in `vps/module_gateway/config/views.py` → `api_app_version()`
+
+### PFLICHT bei jedem Release: Versionen an DREI Stellen anpassen
+
+| Stelle | Datei | Was aendern |
+|---|---|---|
+| **1. App-Version** | `perasi_app/pubspec.yaml` | `version: X.Y.Z+N` (Build-Nr muss steigen) |
+| **2. latest_version** | `klara/vps/module_gateway/config/views.py` | In `api_app_version()` anpassen |
+| **3. min_version** | Gleiche Datei | Hochziehen wenn Update Pflicht sein soll |
+
+Danach: APK bauen → deployen → `docker restart gateway` (2x: fuer APK + fuer Versions-Endpoint).
+
 ---
 
 ## Bekannte Stolperfallen fuer Claude-Instanzen
