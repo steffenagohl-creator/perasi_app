@@ -7,7 +7,6 @@ import '../core/auth/cookie_bridge.dart';
 import '../core/config.dart';
 import '../core/connectivity/connection_monitor.dart';
 import '../core/push/ntfy_service.dart';
-import '../widgets/nfc_floating_button.dart';
 import 'nfc_screen.dart';
 import 'offline_screen.dart';
 
@@ -348,10 +347,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
             ],
           ),
         ),
-        // NFC-Button unten rechts (schwebt ueber dem WebView)
-        floatingActionButton: NfcFloatingButton(
-          onPressed: _openNfcScreen,
-        ),
+        // NFC-Button entfernt (schwebte ueber dem WebView und verdeckte
+        // Gateway-Icons). Langfristig wird der NFC-Trigger als HTML-Button
+        // direkt ins Gateway-Template integriert (per JS-Bridge). Die
+        // NFC-Funktionalitaet im Code (NfcService, NfcScreen) bleibt
+        // erhalten und ist weiterhin per JS-Bridge aufrufbar.
       ),
     );
   }
