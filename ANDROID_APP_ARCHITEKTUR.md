@@ -326,6 +326,26 @@ Die Perasi-App macht **keine eigenen API-Endpoints** — sie ruft nur
 bestehende auf. Wenn ein neuer Endpoint noetig ist, gehoert er ins
 Klara-Repo (Gateway oder Pi-Modul), nicht in die Flutter-App.
 
+### 8. Mobile-Scroll-Bugs kommen fast immer aus dem Klara-Repo
+
+Wenn in der Perasi-App das Scrollen hakt (besonders "nur mit zwei
+Fingern" Symptom), ist die Ursache fast immer im globalen CSS/JS der
+Klara-Plattform, nicht in der App selbst. Die App ist nur ein WebView —
+HTML/CSS/JS kommen live vom Server. Der theme-loader.js, base.html-
+Templates und Keycloak-Theme sind die üblichen Fundstellen.
+
+**Vollstaendige Liste der Mobile-Scroll-Killer-Patterns:** siehe
+`ARCHITEKTUR.md` Abschnitt 9 "Mobile-Scroll-Patterns" im klara-Repo.
+Enthält reproduzierbare Teststrategie via Playwright+Chromium Mobile-
+Emulation und konkrete Fix-Commits.
+
+**App-seitige Stellen die Mobile-Scroll beeinflussen (selten schuld,
+aber wissen):**
+- `lib/screens/webview_screen.dart`: WebView-Settings
+  (`useHybridComposition`, `overScrollMode`, Pull-to-Refresh)
+- Wenn Scroll nur in App aber nicht im mobilen Browser hakt: hier
+  schauen. Sonst immer erst klara-Repo pruefen.
+
 ---
 
 ## Versionshistorie
