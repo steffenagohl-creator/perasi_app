@@ -1,6 +1,6 @@
 # Perasi App — Technische Architektur
 
-Letzte Aktualisierung: 2026-04-12, Version 1.2.0
+Letzte Aktualisierung: 2026-05-03 (About-Modul + neuer Release-Workflow), Version 1.2.1
 
 ## Ueberblick
 
@@ -225,52 +225,103 @@ Account-Zugriff.
 
 ## Versions-Check und In-App-Update
 
-### Ablauf beim App-Start
+### Zwei getrennte Mechanismen seit 2026-05-03
+
+Es gibt **zwei voneinander unabhaengige** Versions-Mechanismen, die NICHT
+verwechselt werden duerfen:
+
+| Mechanismus | Endpoint | Wer liest | Wofuer |
+|---|---|---|---|
+| **App-Update-Zwang** | `GET /api/app-version/` | Splash der Perasi-App | Entscheidet, ob Update-Screen erscheint |
+| **About-Modal** | `GET /api/about/` | Modul "About Perasi" im WebView | Zeigt User die installierten Versionen aller Apps |
+
+### Mechanismus 1 — App-Update-Zwang (Splash)
 
 ```
 Splash Screen → GET /gateway/api/app-version/
-    ├── Antwort: {"current_version": "1.2.0", "min_version": "1.1.0", "download_url": "..."}
+    ├── Antwort: {"min_version": "1.2.0", "latest_version": "1.2.1"}
     ├── App-Version >= min_version → WebView laden
     └── App-Version < min_version → Update-Screen anzeigen
 ```
+
+Werte stehen **hardcodet** in `vps/module_gateway/config/views.py` →
+`api_app_version()`. Die werden nur angefasst, wenn ein **Zwangs-Update**
+ausgeloest werden soll. Aenderung erfordert Container-Restart, weil das
+Code (kein Static-Asset) ist und der Code per Bind-Mount eingebunden ist.
+
+### Mechanismus 2 — About-Modal (NEU, 2026-05-03)
+
+```
+WebView → GET /api/about/
+    ├── api_about() liest about.json (App-Liste, kuratiert)
+    ├── Pro App mit version_quelle: "version_json":
+    │     liest *_version.json per Path.open() aus dem Dateisystem
+    └── Pro App mit version_quelle: "git":
+          liest aktuellen HEAD-Commit der Plattform
+```
+
+Quelle: `vps/module_gateway/config/views.py:771` (`api_about`).
+
+| Datei | Inhalt |
+|---|---|
+| `vps/module_gateway/config/about.json` | Kuratiert: 5 Apps mit Beschreibung, Icon, Download-URL |
+| `vps/module_gateway/static/downloads/android_version.json` | Live-Version der Android-App |
+| `vps/module_gateway/static/downloads/desktop_version.json` | Live-Version der Desktop-App (Tauri) |
+
+**Kein Container-Restart noetig** fuer die `*_version.json`-Dateien — die
+View liest sie per `Path.open()` direkt aus dem Dateisystem (NICHT durch
+WhiteNoise). Beim naechsten Modal-Aufruf erscheint die neue Version.
 
 ### APK-Download
 
 Die APK wird direkt vom Gateway-Static-Verzeichnis ausgeliefert:
 `https://klara.services/gateway/static/downloads/perasi.apk`
 
-**WICHTIG:** Nach jedem APK-Deploy muss `docker restart gateway` folgen
-(WhiteNoise-Cache-Problem, dokumentiert in `BUILD.md`).
+**WICHTIG:** Beim Austausch der **APK-Datei selbst** muss `docker restart gateway`
+folgen (WhiteNoise-Cache, siehe `BUILD.md`). Nur fuer die JSON-Dateien
+nicht.
 
-### Versions-Endpoint (Gateway)
+### Release-Workflow (Reihenfolge!)
 
-`GET /api/app-version/` liefert:
-```json
-{"min_version": "1.2.0", "latest_version": "1.2.1"}
+1. `perasi_app/pubspec.yaml` → `version: X.Y.Z+N` (Build-Nummer muss steigen)
+2. `flutter analyze` — muss fehlerfrei sein
+3. `flutter build apk --release`
+4. APK kopieren nach `klara/vps/module_gateway/static/downloads/perasi.apk`
+5. `klara/vps/module_gateway/static/downloads/android_version.json` aktualisieren
+   (mindestens `version`, optional `pub_date` und `notes`)
+6. NUR wenn Zwangs-Update: `klara/vps/module_gateway/config/views.py` →
+   `api_app_version()` anpassen (`min_version`, `latest_version`)
+7. `docker exec gateway python3 /app/manage.py collectstatic --noinput`
+8. `docker restart gateway` (PFLICHT wegen APK + ggf. Code-Aenderung)
+9. Verifikation: `curl -sI .../perasi.apk` Groesse pruefen,
+   `curl -s /api/about/` neue Version unter `perasi-android` pruefen
+10. Commits + Push in `klara`-Repo UND `perasi_app`-Repo
+
+### Sonderfall: NUR Versions-Bump im About sichtbar machen
+
+Wenn die APK nicht neu gebaut wird, sondern nur das About-Modal die
+neue Versionsnummer anzeigen soll (z.B. nach externem Build):
+
+```bash
+# android_version.json bearbeiten
+cd /home/admin/klara
+git add vps/module_gateway/static/downloads/android_version.json
+git commit -m "android: Version 1.2.2 im About-Modal freigeben"
+git push
+# FERTIG. Kein collectstatic, kein docker restart.
 ```
-
-- App < `min_version` → **Update-Screen erzwungen** (User muss aktualisieren)
-- App < `latest_version` → Update empfohlen
-- Die Werte stehen in `vps/module_gateway/config/views.py` → `api_app_version()`
-
-### PFLICHT bei jedem Release: Versionen an DREI Stellen anpassen
-
-| Stelle | Datei | Was aendern |
-|---|---|---|
-| **1. App-Version** | `perasi_app/pubspec.yaml` | `version: X.Y.Z+N` (Build-Nr muss steigen) |
-| **2. latest_version** | `klara/vps/module_gateway/config/views.py` | In `api_app_version()` anpassen |
-| **3. min_version** | Gleiche Datei | Hochziehen wenn Update Pflicht sein soll |
-
-Danach: APK bauen → deployen → `docker restart gateway` (2x: fuer APK + fuer Versions-Endpoint).
 
 ---
 
 ## Bekannte Stolperfallen fuer Claude-Instanzen
 
-### 1. WhiteNoise-Cache (Build-Deploy)
+### 1. WhiteNoise-Cache (nur fuer APK, NICHT fuer JSON)
 
-Nach `collectstatic` MUSS `docker restart gateway` folgen, sonst liefert
-der Server die alte APK aus dem Speicher-Cache. Details in `BUILD.md`.
+Nach `collectstatic` mit neuer **APK** MUSS `docker restart gateway` folgen,
+sonst liefert der Server die alte APK aus dem Speicher-Cache (Parsing-Fehler).
+Fuer **`*_version.json`-Aenderungen** ist KEIN Restart noetig — die View
+`api_about` liest die JSON direkt per `Path.open()` aus dem Dateisystem
+(siehe `vps/module_gateway/config/views.py:771`). Details in `BUILD.md`.
 
 ### 2. klara_common ist pip-installiert, nicht bind-mounted
 
@@ -356,6 +407,7 @@ aber wissen):**
 | 1.1.0 | Maerz 2026 | In-App-Update, Scroll-Optimierung |
 | 1.1.1 | Maerz 2026 | Fix 404-Fehlerscreen, Release-Signierung mit echtem Keystore |
 | 1.2.0 | April 2026 | Shared-Tablet-Modus (Cookie-Check, NFC-Deaktivierung, Debug-Log) |
+| 1.2.1 | Mai 2026 | About-Modul integriert: `android_version.json` pflegt die Version im Modal, kein Container-Restart fuer reine JSON-Updates |
 
 ## Verwandte Dokumente
 
