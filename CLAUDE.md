@@ -1,5 +1,82 @@
 # Perasi App — Flutter WebView App fuer klara.services
 
+## ⚡ ZUERST LESEN: Release-Workflow am Ende jeder Aenderung
+
+**Egal was du an der App geaendert hast — der Abschluss ist IMMER gleich.**
+Stand: 2026-05-03 (About-Modul aktiv).
+
+### 1. Wo wird die fertige APK abgelegt?
+
+```
+/home/admin/klara/vps/module_gateway/static/downloads/perasi.apk
+```
+
+Das ist der einzige Ort. Von dort liefert nginx sie unter
+`https://klara.services/gateway/static/downloads/perasi.apk` aus.
+
+### 2. Wie wird die App-Version (in der App) gesetzt?
+
+`/home/admin/perasi_app/pubspec.yaml`:
+
+```yaml
+version: 1.2.2+6   # major.minor.patch+buildnummer
+```
+
+**Build-Nummer (+N) MUSS bei jedem Release um 1 steigen**, sonst lehnt
+Android das Update ab.
+
+### 3. Wie wird die Version fuer die About-Seite gesetzt?
+
+`/home/admin/klara/vps/module_gateway/static/downloads/android_version.json`:
+
+```json
+{
+  "version": "1.2.2",
+  "pub_date": "2026-05-03",
+  "notes": "Optional, kurze Release-Notiz",
+  "download_url": "/gateway/static/downloads/perasi.apk",
+  "min_version": "1.2.0"
+}
+```
+
+Diese Datei wird vom Endpoint `/api/about/` zur Laufzeit gelesen — kein
+Container-Restart noetig fuer reine JSON-Updates.
+
+### Reihenfolge fuer einen vollstaendigen Release
+
+1. `pubspec.yaml` → Version + Build-Nummer hochziehen
+2. `flutter analyze` (muss fehlerfrei sein)
+3. `flutter build apk --release` (`export ANDROID_HOME=/home/admin/android-sdk` davor)
+4. APK kopieren: `cp build/app/outputs/flutter-apk/app-release.apk /home/admin/klara/vps/module_gateway/static/downloads/perasi.apk`
+5. `android_version.json` daneben aktualisieren (mind. `version`, `pub_date`)
+6. `docker exec gateway python3 /app/manage.py collectstatic --noinput`
+7. `docker restart gateway` ← **PFLICHT wegen WhiteNoise-Cache fuer die APK**
+8. Verifizieren: `curl -sI https://klara.services/gateway/static/downloads/perasi.apk` → Groesse
+9. Verifizieren: `curl -s https://klara.services/api/about/` → neue Version unter `perasi-android`
+10. Im `klara`-Repo committen (APK + JSON) und pushen
+11. Im `perasi_app`-Repo committen (Source-Code) und pushen
+
+### Sonderfall: NUR Versions-Bump im About sichtbar machen (kein neuer APK-Build)
+
+Schritte 4 + 5 entfallen. Schritte 6 + 7 ENTFALLEN AUCH — weil die View
+`api_about` die JSON direkt aus dem Dateisystem liest (umgeht WhiteNoise).
+Reicht: `android_version.json` aendern → committen → pushen.
+
+### Warum diese Reihenfolge
+
+- **WhiteNoise-Cache:** Gateway nutzt `CompressedManifestStaticFilesStorage`
+  (`vps/module_gateway/config/settings.py:193`). Der ungehashte Pfad
+  `perasi.apk` wird aus dem Speicher-Cache bedient. Ohne Restart kommt
+  alte APK → "Parsing-Fehler" auf dem Tablet (anderer Keystore).
+- **JSON umgeht WhiteNoise:** `api_about` (`vps/module_gateway/config/views.py:771`)
+  liest `*_version.json` per `Path.open()` direkt vom Dateisystem.
+- **Zwei Repos:** Backend (APK + JSON liegen dort) ist `klara`, App-Code
+  ist `perasi_app`. Beide bekommen einen Commit.
+
+Volle Doku in [BUILD.md](BUILD.md) und [ANDROID_APP_ARCHITEKTUR.md](ANDROID_APP_ARCHITEKTUR.md).
+
+---
+
 ## Kontext
 
 Die App-Spezifikation liegt in `/home/admin/klara/FLUTTER_APP_PLAN.md`.
@@ -63,10 +140,10 @@ Wenn die App eigene API-Endpoints bekommt (z.B. fuer Einstellungen oder Aktionen
 
 ## Wichtige URLs
 
-- **Produktion:** `https://klara.services`
 - **Gateway (WebView-Start):** `https://klara.services/gateway/`
 - **ntfy Push-Server:** `https://klara.services/ntfy`
-- **Versions-Check:** `GET /gateway/api/app-version/`
+- **Update-Zwang-Endpoint:** `GET /gateway/api/app-version/` (Splash prueft `min_version`)
+- **About-Modul-Endpoint:** `GET /api/about/` (Versions-Anzeige im WebView)
 - **NFC-Checkin:** `POST /time-tracking/api/rfid-checkin/`
 - **GitHub Repo:** `https://github.com/steffenagohl-creator/perasi_app`
 
@@ -124,101 +201,6 @@ flutter build apk --release  # Android APK bauen
 - Backend-Code liegt in `/home/admin/klara/` — NICHT in diesem Repo
 - Backend laeuft auf dem VPS (Django Gateway) — aendert Steffen separat
 - Die App macht nur API-Calls gegen bestehende Endpoints
-
-## Implementierungs-Phasen
-
-- **Phase 1:** App-Grundgeruest (WebView, Splash, Offline, Versions-Check) ✅
-- **Phase 2:** Push via ntfy.sh (WebSocket, Benachrichtigungen) ✅
-- **Phase 3:** NFC-Einstempeln + Cookie-Bridge + JavaScript-Bridge ✅
-- **Phase 4:** Biometrie-Entsperrung ✅
-- **Phase 5:** Polishing + Release ✅
-
-## Release-Workflow (NEU ab 2026-05-03 — About-Modul)
-
-Die Plattform hat jetzt ein **About-Modul** unter `/api/about/`, das die
-Versionen aller Apps zur Laufzeit aus dem Dateisystem liest. Damit ist
-der Release-Ablauf fuer die Android-App in zwei Stufen aufgeteilt:
-
-### Stufe A — Versions-Anzeige im About-Modal (KEIN Restart noetig)
-
-Die Datei `android_version.json` in
-`/home/admin/klara/vps/module_gateway/static/downloads/` wird vom
-Gateway **direkt per `Path.open()` aus dem Dateisystem** gelesen
-(Endpoint `api_about` in `vps/module_gateway/config/views.py:771`). Sie
-geht NICHT durch WhiteNoise. Beim naechsten Modal-Aufruf erscheint die
-neue Version automatisch.
-
-```bash
-# android_version.json bearbeiten:
-# {"version": "1.2.2", "pub_date": "2026-05-03", "notes": "..."}
-cd /home/admin/klara
-git add vps/module_gateway/static/downloads/android_version.json
-git commit -m "android: Version 1.2.2 freigeben"
-git push
-# FERTIG. Kein collectstatic, kein docker restart.
-```
-
-### Stufe B — Neue APK ausliefern (RESTART weiterhin Pflicht)
-
-Die APK selbst liegt unter dem **ungehashten Pfad**
-`/gateway/static/downloads/perasi.apk` und wird von WhiteNoise mit
-`CompressedManifestStaticFilesStorage` aus dem Speicher-Cache
-ausgeliefert. Ohne Container-Restart wird die alte APK weitergegeben →
-"Parsing-Fehler" auf dem Tablet (anderer Keystore).
-
-```bash
-# 1. APK bauen
-cd /home/admin/perasi_app
-export ANDROID_HOME=/home/admin/android-sdk
-flutter build apk --release
-
-# 2. APK + Versions-JSON ins Gateway-Static-Verzeichnis legen
-cp build/app/outputs/flutter-apk/app-release.apk \
-   /home/admin/klara/vps/module_gateway/static/downloads/perasi.apk
-# android_version.json in DERSELBEN Stelle aktualisieren
-
-# 3. WhiteNoise-Cache invalidieren
-docker exec gateway python3 /app/manage.py collectstatic --noinput
-docker restart gateway   # PFLICHT, sonst alte APK aus Speicher-Cache
-
-# 4. Im klara-Repo committen + pushen
-cd /home/admin/klara
-git add vps/module_gateway/static/downloads/perasi.apk \
-        vps/module_gateway/static/downloads/android_version.json
-git commit -m "android: APK 1.2.2 ausgeliefert"
-git push
-```
-
-### Schema von `android_version.json`
-
-```json
-{
-  "version": "1.2.2",
-  "pub_date": "2026-05-03",
-  "notes": "Kurze Release-Notiz, optional",
-  "download_url": "/gateway/static/downloads/perasi.apk",
-  "min_version": "1.2.0"
-}
-```
-
-Pflicht ist nur `version`. Schema-Doku liegt in
-`/home/admin/klara/vps/module_gateway/static/downloads/README.md`.
-
-### Reihenfolge (immer in dieser Folge!)
-
-1. `pubspec.yaml` → Version + Build-Nummer hochziehen
-2. `flutter analyze` muss fehlerfrei sein
-3. `flutter build apk --release`
-4. APK kopieren nach `klara/vps/module_gateway/static/downloads/perasi.apk`
-5. `android_version.json` daneben aktualisieren (`version`, `pub_date`)
-6. `docker exec gateway python3 /app/manage.py collectstatic --noinput`
-7. `docker restart gateway`
-8. Pruefen: `curl -sI https://klara.services/gateway/static/downloads/perasi.apk`
-   muss neue Groesse zeigen
-9. Pruefen: `curl -s https://klara.services/api/about/` muss neue
-   Version unter `perasi-android` zeigen
-10. Im `klara`-Repo committen + pushen
-11. Im `perasi_app`-Repo committen + pushen (Source-Code)
 
 ## Vollstaendiger Plan
 
